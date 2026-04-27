@@ -65,25 +65,18 @@ async function sendEmojiMenu(target, page = 0) {
         const currentItems = result.resources.slice(0, 25); // Lấy 25 ảnh đầu tiên cho ma trận 5x5
 
         // 1. Tạo URL ảnh lưới 5x5 bằng Cloudinary Overlays
-        // Sử dụng ảnh trắng làm nền 150x150
-        let gridUrl = cloudinary.url("sample", { // Dùng sample làm base và clear nó
-            transformation: [
-                { width: 150, height: 150, crop: "fill", effect: "colorize", color: "white" },
-                ...currentItems.map((res, i) => {
-                    const x = (i % 5) * 30;
-                    const y = Math.floor(i / 5) * 30;
-                    return {
-                        overlay: res.public_id.replace(/\//g, ':'),
-                        width: 30,
-                        height: 30,
-                        crop: "fit",
-                        gravity: "north_west",
-                        x: x,
-                        y: y
-                    };
-                })
-            ]
-        });
+        // Sử dụng ảnh đầu tiên làm base và dùng layer 'blank' hoặc hiệu ứng để làm nền trắng
+        const overlays = currentItems.map((res, i) => {
+            const x = (i % 5) * 30;
+            const y = Math.floor(i / 5) * 30;
+            // Cloudinary yêu cầu escape dấu / thành : trong overlay
+            const cleanId = res.public_id.replace(/\//g, ':');
+            return `l_${cleanId},w_30,h_30,g_north_west,x_${x},y_${y}`;
+        }).join('/');
+
+        // Tạo URL thủ công để kiểm soát chính xác các layer
+        const cloudName = process.env.CLOUDINARY_NAME;
+        const gridUrl = `https://res.cloudinary.com/${cloudName}/image/upload/w_150,h_150,c_pad,b_white/${overlays}/${currentItems[0].public_id}`;
 
         const attachment = new AttachmentBuilder(gridUrl, { name: 'matrix.png' });
         const rows = [];
