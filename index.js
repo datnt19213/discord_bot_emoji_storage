@@ -65,11 +65,13 @@ async function sendEmojiMenu(target) {
         let currentRow = new ActionRowBuilder();
 
         result.resources.forEach((resource, index) => {
-            const emojiName = resource.public_id.split('/')[1];
+            // Lấy tên hiển thị trên nút (phần sau dấu / nếu có)
+            const displayName = resource.public_id.includes('/') ? resource.public_id.split('/').pop() : resource.public_id;
+            
             currentRow.addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`send_${emojiName}`)
-                    .setLabel(emojiName)
+                    .setCustomId(`send_${resource.public_id}`) // Lưu full public_id để lấy URL chính xác
+                    .setLabel(displayName)
                     .setStyle(ButtonStyle.Secondary)
             );
 
@@ -84,16 +86,21 @@ async function sendEmojiMenu(target) {
             components: rows
         };
 
-        if (target.reply) {
-            await target.reply(menuData);
-        } else {
+        // Nếu là Slash Command thì gửi ẩn (ephemeral), nếu là tin nhắn thường thì gửi công khai
+        if (target.isChatInputCommand && target.isChatInputCommand()) {
             await target.reply({ ...menuData, ephemeral: true });
+        } else if (target.reply) {
+            await target.reply(menuData);
         }
 
     } catch (error) {
-        console.error(error);
-        const errorMsg = 'Hệ thống Cloudinary đang gặp sự cố!';
-        target.reply ? target.reply(errorMsg) : target.reply({ content: errorMsg, ephemeral: true });
+        console.error('❌ Lỗi Cloudinary/Discord:', error);
+        const errorMsg = 'Hệ thống Cloudinary đang gặp sự cố hoặc bạn chưa cấu hình đúng!';
+        if (target.replied || target.deferred) {
+            await target.followUp({ content: errorMsg, ephemeral: true });
+        } else {
+            target.reply ? target.reply(errorMsg) : target.reply({ content: errorMsg, ephemeral: true });
+        }
     }
 }
 
@@ -110,15 +117,10 @@ client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
 
     if (interaction.customId.startsWith('send_')) {
-        const name = interaction.customId.replace('send_', '');
+        const publicId = interaction.customId.replace('send_', '');
 
-        // Tự động lấy URL từ Cloudinary
-        // .url() sẽ trả về link ảnh gốc. 
-        // Nếu bạn muốn ép kiểu hoặc tối ưu, hãy dùng cách dưới đây:
-        const imageUrl = cloudinary.url(`discord_emojis/${name}`, {
-            // Nếu là GIF, Cloudinary sẽ tự giữ nguyên nếu bạn không ép format tĩnh
-            // Để an toàn cho cả động và tĩnh, bạn nên bỏ dòng format: "webp" 
-            // hoặc dùng "auto" để Cloudinary tự quyết định.
+        // Tự động lấy URL từ Cloudinary bằng publicId đầy đủ
+        const imageUrl = cloudinary.url(publicId, {
             quality: "auto",
             fetch_format: "auto"
         });
