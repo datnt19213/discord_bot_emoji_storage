@@ -74,25 +74,36 @@ async function sendEmojiMenu(target, page = 0) {
         const guild = target.guild;
         if (!guild) return target.editReply('Chỉ dùng được trong Server.');
 
-        // 1. Đồng bộ Emoji
-        console.log(`[${target.id}] ⏳ Đang đồng bộ ${currentItems.length} Emoji sang Discord...`);
+        // 1. Đồng bộ Emoji (Xử lý tuần tự để tránh Rate Limit)
+        console.log(`[${target.id}] ⏳ Đang đồng bộ Emoji sang Discord...`);
         const discordEmojis = await guild.emojis.fetch();
-        
-        const emojiMapping = await Promise.all(currentItems.map(async (res, i) => {
+        const emojiMapping = [];
+
+        // Kiểm tra giới hạn Emoji của Server (Thường là 50 cho server level 0)
+        const maxEmojis = guild.premiumTier === 0 ? 50 : (guild.premiumTier === 1 ? 100 : (guild.premiumTier === 2 ? 150 : 250));
+        const currentEmojiCount = discordEmojis.size;
+
+        for (const res of currentItems) {
             const cleanName = `hub_${res.public_id.replace(/[^a-zA-Z0-9]/g, '_')}`.slice(0, 32);
             let emoji = discordEmojis.find(e => e.name === cleanName);
 
             if (!emoji) {
-                try {
-                    const imageUrl = cloudinary.url(res.public_id, { width: 64, height: 64, crop: "fit" });
-                    emoji = await guild.emojis.create({ attachment: imageUrl, name: cleanName });
-                    console.log(`   └─ ✅ Tạo mới: ${cleanName}`);
-                } catch (err) {
-                    console.error(`   └─ ❌ Lỗi tạo ${cleanName}: ${err.message}`);
+                if (currentEmojiCount >= maxEmojis) {
+                    console.warn(`[${target.id}] ⚠️ Server đã hết chỗ chứa Emoji (${currentEmojiCount}/${maxEmojis})`);
+                } else {
+                    try {
+                        const imageUrl = cloudinary.url(res.public_id, { width: 64, height: 64, crop: "fit" });
+                        emoji = await guild.emojis.create({ attachment: imageUrl, name: cleanName });
+                        console.log(`   └─ ✅ Tạo mới: ${cleanName}`);
+                        // Nghỉ một chút để tránh rate limit
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                    } catch (err) {
+                        console.error(`   └─ ❌ Lỗi tạo ${cleanName}: ${err.message}`);
+                    }
                 }
             }
-            return { public_id: res.public_id, emoji: emoji };
-        }));
+            emojiMapping.push({ public_id: res.public_id, emoji: emoji });
+        }
         console.log(`[${target.id}] ✅ Đồng bộ Emoji hoàn tất.`);
 
         const rows = [];
