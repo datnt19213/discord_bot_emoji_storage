@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, REST, Routes } = require('discord.js');
 const cloudinary = require('cloudinary').v2;
 
 // 1. Cấu hình Cloudinary (Lấy từ Dashboard Cloudinary của bạn)
@@ -19,61 +19,94 @@ const client = new Client({
 });
 
 // Khi Bot sẵn sàng
-client.once('ready', () => {
+client.once('ready', async () => {
     console.log(`✅ Đã đăng nhập thành công: ${client.user.tag}`);
-});
 
-// Lệnh mở kho Emoji: Người dùng gõ !emo
-client.on('messageCreate', async (message) => {
-    if (message.author.bot) return;
+    // Đăng ký Slash Command /emo
+    const commands = [
+        {
+            name: 'emo',
+            description: 'Mở kho Emoji Hub',
+        },
+    ];
 
-    if (message.content === '!emo') {
-        try {
-            // Lấy danh sách ảnh từ folder 'discord_emojis' trên Cloudinary
-            const result = await cloudinary.api.resources({
-                type: 'upload',
-                prefix: 'discord_emojis/',
-                max_results: 25 // Discord giới hạn tối đa 25 nút bấm mỗi tin nhắn
-            });
-
-            if (result.resources.length === 0) {
-                return message.reply('Kho ảnh trống rồi, hãy upload ảnh lên Cloudinary folder "discord_emojis" nhé!');
-            }
-
-            const rows = [];
-            let currentRow = new ActionRowBuilder();
-
-            result.resources.forEach((resource, index) => {
-                const emojiName = resource.public_id.split('/')[1]; // Lấy tên file
-
-                currentRow.addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`send_${emojiName}`)
-                        .setLabel(emojiName)
-                        .setStyle(ButtonStyle.Secondary)
-                );
-
-                // Mobile Friendly: Cứ mỗi 5 nút mình ngắt 1 hàng cho dễ bấm trên điện thoại
-                if ((index + 1) % 5 === 0 || index === result.resources.length - 1) {
-                    rows.push(currentRow);
-                    currentRow = new ActionRowBuilder();
-                }
-            });
-
-            await message.reply({
-                content: '🌟 **KumoD Emoji Hub**\nBấm nút để gửi sticker (không cần Nitro):',
-                components: rows
-            });
-
-        } catch (error) {
-            console.error(error);
-            message.reply('Hệ thống Cloudinary đang gặp sự cố!');
-        }
+    try {
+        console.log('⏳ Đang làm mới Slash Commands...');
+        await client.application.commands.set(commands);
+        console.log('✅ Đã đăng ký Slash Commands thành công!');
+    } catch (error) {
+        console.error('❌ Lỗi khi đăng ký Slash Commands:', error);
     }
 });
 
-// Xử lý sự kiện bấm nút (Interaction) - Quan trọng cho PC/Web/Mobile
+// Giữ lại Prefix command nếu người dùng vẫn muốn dùng !emo (Tùy chọn)
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+    if (message.content === '!emo') {
+        await sendEmojiMenu(message);
+    }
+});
+
+// Hàm dùng chung để gửi menu Emoji
+async function sendEmojiMenu(target) {
+    try {
+        const result = await cloudinary.api.resources({
+            type: 'upload',
+            prefix: 'discord_emojis/',
+            max_results: 25
+        });
+
+        if (result.resources.length === 0) {
+            const content = 'Kho ảnh trống rồi, hãy upload ảnh lên Cloudinary folder "discord_emojis" nhé!';
+            return target.reply ? target.reply(content) : target.reply({ content, ephemeral: true });
+        }
+
+        const rows = [];
+        let currentRow = new ActionRowBuilder();
+
+        result.resources.forEach((resource, index) => {
+            const emojiName = resource.public_id.split('/')[1];
+            currentRow.addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`send_${emojiName}`)
+                    .setLabel(emojiName)
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+            if ((index + 1) % 5 === 0 || index === result.resources.length - 1) {
+                rows.push(currentRow);
+                currentRow = new ActionRowBuilder();
+            }
+        });
+
+        const menuData = {
+            content: '🌟 **KumoD Emoji Hub**\nBấm nút để gửi sticker (không cần Nitro):',
+            components: rows
+        };
+
+        if (target.reply) {
+            await target.reply(menuData);
+        } else {
+            await target.reply({ ...menuData, ephemeral: true });
+        }
+
+    } catch (error) {
+        console.error(error);
+        const errorMsg = 'Hệ thống Cloudinary đang gặp sự cố!';
+        target.reply ? target.reply(errorMsg) : target.reply({ content: errorMsg, ephemeral: true });
+    }
+}
+
+// Xử lý sự kiện Interaction (Slash Command và Button)
 client.on('interactionCreate', async (interaction) => {
+    // 1. Xử lý Slash Command /emo
+    if (interaction.isChatInputCommand()) {
+        if (interaction.commandName === 'emo') {
+            await sendEmojiMenu(interaction);
+        }
+    }
+
+    // 2. Xử lý Button bấm gửi Emoji
     if (!interaction.isButton()) return;
 
     if (interaction.customId.startsWith('send_')) {

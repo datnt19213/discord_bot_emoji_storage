@@ -40,7 +40,9 @@ A Discord bot that allows users to send stickers/emojis from a Cloudinary storag
    ```bash
    node index.js
    ```
-3. In Discord, use the command `!menu` to see the emoji list.
+3. In Discord, you can use:
+   - **Slash Command**: Type `/emo` to open the emoji hub.
+   - **Prefix Command**: Type `!emo` to open the emoji hub.
 4. Click a button to send the corresponding emoji.
 
 ## Technical Details
