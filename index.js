@@ -140,7 +140,7 @@ async function sendEmojiMenu(target, page = 0) {
     } catch (error) {
         console.error('❌ Lỗi chi tiết:', error);
         const errorMsg = `Có lỗi xảy ra: ${error.message}. Hãy kiểm tra xem Bot đã có quyền 'Manage Emojis' chưa?`;
-        
+
         try {
             if (target.deferred || target.replied) {
                 await target.editReply({ content: errorMsg, components: [] });
