@@ -47,55 +47,80 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// Hàm dùng chung để gửi menu Emoji
-async function sendEmojiMenu(target) {
+// Hàm dùng chung để gửi menu Emoji (có phân trang)
+async function sendEmojiMenu(target, page = 0) {
     try {
+        const itemsPerPage = 5;
         const result = await cloudinary.api.resources({
             type: 'upload',
             prefix: '',
-            max_results: 25
+            max_results: 100 // Lấy tối đa 100 ảnh để phân trang
         });
 
         if (result.resources.length === 0) {
-            const content = 'Kho ảnh trống rồi, hãy upload ảnh lên Cloudinary folder "discord_emojis" nhé!';
+            const content = 'Kho ảnh trống rồi!';
             return target.reply ? target.reply(content) : target.reply({ content, ephemeral: true });
         }
 
-        const rows = [];
-        let currentRow = new ActionRowBuilder();
+        const totalPages = Math.ceil(result.resources.length / itemsPerPage);
+        const start = page * itemsPerPage;
+        const end = start + itemsPerPage;
+        const currentItems = result.resources.slice(start, end);
 
-        result.resources.forEach((resource, index) => {
-            // Lấy tên hiển thị trên nút (phần sau dấu / nếu có)
+        const embeds = [];
+        const emojiButtons = new ActionRowBuilder();
+        const navButtons = new ActionRowBuilder();
+
+        currentItems.forEach((resource) => {
             const displayName = resource.public_id.includes('/') ? resource.public_id.split('/').pop() : resource.public_id;
-            
-            currentRow.addComponents(
+            const imageUrl = cloudinary.url(resource.public_id, { width: 200, crop: "scale", quality: "auto" });
+
+            // Tạo Embed để hiển thị ảnh
+            embeds.push({
+                title: displayName,
+                image: { url: imageUrl }
+            });
+
+            // Tạo nút bấm tương ứng
+            emojiButtons.addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`send_${resource.public_id}`) // Lưu full public_id để lấy URL chính xác
+                    .setCustomId(`send_${resource.public_id}`)
                     .setLabel(displayName)
                     .setStyle(ButtonStyle.Secondary)
             );
-
-            if ((index + 1) % 5 === 0 || index === result.resources.length - 1) {
-                rows.push(currentRow);
-                currentRow = new ActionRowBuilder();
-            }
         });
 
+        // Nút điều hướng
+        navButtons.addComponents(
+            new ButtonBuilder()
+                .setCustomId(`page_${page - 1}`)
+                .setLabel('⬅️ Trang trước')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(page === 0),
+            new ButtonBuilder()
+                .setCustomId(`page_${page + 1}`)
+                .setLabel('Trang sau ➡️')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(page >= totalPages - 1)
+        );
+
         const menuData = {
-            content: '🌟 **KumoD Emoji Hub**\nBấm nút để gửi sticker (không cần Nitro):',
-            components: rows
+            content: `🌟 **KumoD Emoji Hub** (Trang ${page + 1}/${totalPages})`,
+            embeds: embeds,
+            components: [emojiButtons, navButtons]
         };
 
-        // Nếu là Slash Command thì gửi ẩn (ephemeral), nếu là tin nhắn thường thì gửi công khai
         if (target.isChatInputCommand && target.isChatInputCommand()) {
             await target.reply({ ...menuData, ephemeral: true });
+        } else if (target.isButton && target.isButton()) {
+            await target.update(menuData);
         } else if (target.reply) {
             await target.reply(menuData);
         }
 
     } catch (error) {
-        console.error('❌ Lỗi Cloudinary/Discord:', error);
-        const errorMsg = 'Hệ thống Cloudinary đang gặp sự cố hoặc bạn chưa cấu hình đúng!';
+        console.error('❌ Lỗi:', error);
+        const errorMsg = 'Có lỗi xảy ra khi tải kho ảnh!';
         if (target.replied || target.deferred) {
             await target.followUp({ content: errorMsg, ephemeral: true });
         } else {
@@ -113,7 +138,14 @@ client.on('interactionCreate', async (interaction) => {
         }
     }
 
-    // 2. Xử lý Button bấm gửi Emoji
+    // 2. Xử lý phân trang
+    if (interaction.isButton() && interaction.customId.startsWith('page_')) {
+        const newPage = parseInt(interaction.customId.replace('page_', ''));
+        await sendEmojiMenu(interaction, newPage);
+        return;
+    }
+
+    // 3. Xử lý Button bấm gửi Emoji
     if (!interaction.isButton()) return;
 
     if (interaction.customId.startsWith('send_')) {
