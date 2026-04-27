@@ -73,12 +73,19 @@ async function sendEmojiMenu(target, page = 0) {
 
         currentItems.forEach((resource) => {
             const displayName = resource.public_id.includes('/') ? resource.public_id.split('/').pop() : resource.public_id;
-            const imageUrl = cloudinary.url(resource.public_id, { width: 200, crop: "scale", quality: "auto" });
+            
+            // Ép kích thước ảnh nhỏ lại (40x40)
+            const imageUrl = cloudinary.url(resource.public_id, { 
+                width: 40, 
+                height: 40, 
+                crop: "fit", 
+                quality: "auto" 
+            });
 
-            // Tạo Embed để hiển thị ảnh
+            // Tạo Embed với thumbnail (ảnh nhỏ bên cạnh) thay vì image (ảnh to bên dưới)
             embeds.push({
                 title: displayName,
-                image: { url: imageUrl }
+                thumbnail: { url: imageUrl }
             });
 
             // Tạo nút bấm tương ứng
