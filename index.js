@@ -47,14 +47,14 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// Hàm dùng chung để gửi menu Emoji (Ma trận 5x5 - Không chữ)
+// Hàm dùng chung để gửi menu Emoji (Ma trận 4x5 + Phân trang)
 async function sendEmojiMenu(target, page = 0) {
     try {
-        const itemsPerPage = 25; // Ma trận 5x5 = 25
+        const itemsPerPage = 20; // 4 hàng x 5 nút = 20
         const result = await cloudinary.api.resources({
             type: 'upload',
             prefix: '',
-            max_results: 100
+            max_results: 500 // Hỗ trợ lên đến 500 ảnh
         });
 
         if (result.resources.length === 0) {
@@ -62,37 +62,34 @@ async function sendEmojiMenu(target, page = 0) {
             return target.reply ? target.reply(content) : target.reply({ content, ephemeral: true });
         }
 
-        const currentItems = result.resources.slice(0, 25);
+        const totalPages = Math.ceil(result.resources.length / itemsPerPage);
+        const start = page * itemsPerPage;
+        const currentItems = result.resources.slice(start, start + itemsPerPage);
+
         const guild = target.guild;
         if (!guild) {
-            return target.editReply('Lệnh này chỉ dùng được trong Server (Guild) để hiển thị Emoji trên nút.');
+            return target.editReply('Lệnh này chỉ dùng được trong Server (Guild).');
         }
 
-        // 1. Đồng bộ Emoji từ Cloudinary sang Discord Server
+        // 1. Đồng bộ Emoji (Xử lý song song)
         const discordEmojis = await guild.emojis.fetch();
-        const emojiMapping = [];
-
-        for (const res of currentItems) {
-            // Tạo tên emoji hợp lệ (chỉ chữ, số và gạch dưới)
+        const emojiMapping = await Promise.all(currentItems.map(async (res) => {
             const cleanName = `hub_${res.public_id.replace(/[^a-zA-Z0-9]/g, '_')}`.slice(0, 32);
             let emoji = discordEmojis.find(e => e.name === cleanName);
-
             if (!emoji) {
                 try {
-                    const imageUrl = cloudinary.url(res.public_id, { width: 128, height: 128, crop: "fit" });
+                    const imageUrl = cloudinary.url(res.public_id, { width: 64, height: 64, crop: "fit" });
                     emoji = await guild.emojis.create({ attachment: imageUrl, name: cleanName });
-                    console.log(`✅ Đã tạo Emoji: ${cleanName}`);
-                } catch (err) {
-                    console.error(`❌ Không thể tạo Emoji ${cleanName}:`, err.message);
-                }
+                } catch (err) { console.error(`❌ Lỗi tạo Emoji: ${err.message}`); }
             }
-            emojiMapping.push({ public_id: res.public_id, emoji: emoji });
-        }
+            return { public_id: res.public_id, emoji: emoji };
+        }));
 
         const rows = [];
-        // 2. Tạo 5 hàng nút, mỗi hàng 5 nút (Tổng 25 nút có ảnh)
-        for (let r = 0; r < 5; r++) {
+        // 2. Tạo 4 hàng Emoji (4x5 = 20 nút)
+        for (let r = 0; r < 4; r++) {
             const row = new ActionRowBuilder();
+            let hasEmoji = false;
             for (let c = 0; c < 5; c++) {
                 const index = r * 5 + c;
                 if (index < emojiMapping.length) {
@@ -100,28 +97,37 @@ async function sendEmojiMenu(target, page = 0) {
                     const button = new ButtonBuilder()
                         .setCustomId(`send_${item.public_id}`)
                         .setStyle(ButtonStyle.Secondary);
-                    
-                    if (item.emoji) {
-                        button.setEmoji(item.emoji.id);
-                    } else {
-                        button.setLabel('?'); // Backup nếu lỗi emoji
-                    }
+                    if (item.emoji) button.setEmoji(item.emoji.id);
+                    else button.setLabel('?');
                     row.addComponents(button);
-                } else {
-                    row.addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`empty_${index}`)
-                            .setLabel(' ')
-                            .setStyle(ButtonStyle.Secondary)
-                            .setDisabled(true)
-                    );
+                    hasEmoji = true;
                 }
             }
-            rows.push(row);
+            if (hasEmoji) rows.push(row);
         }
 
+        // 3. Hàng thứ 5 dành cho Điều hướng
+        const navRow = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`page_${page - 1}`)
+                .setLabel('⬅️')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(page === 0),
+            new ButtonBuilder()
+                .setCustomId(`current_page`)
+                .setLabel(`Trang ${page + 1}/${totalPages}`)
+                .setStyle(ButtonStyle.Secondary)
+                .setDisabled(true),
+            new ButtonBuilder()
+                .setCustomId(`page_${page + 1}`)
+                .setLabel('➡️')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(page >= totalPages - 1)
+        );
+        rows.push(navRow);
+
         const menuData = {
-            content: '🌟 **KumoD Emoji Hub** (Ảnh đã hiện trên nút!)',
+            content: `🌟 **Emoji Hub** - ${result.resources.length} ảnh`,
             components: rows
         };
 
@@ -133,12 +139,9 @@ async function sendEmojiMenu(target, page = 0) {
 
     } catch (error) {
         console.error('❌ Lỗi:', error);
-        const errorMsg = 'Có lỗi xảy ra khi tạo ma trận ảnh 5x5!';
-        if (target.replied || target.deferred) {
-            await target.followUp({ content: errorMsg, ephemeral: true });
-        } else {
-            target.reply ? target.reply(errorMsg) : target.reply({ content: errorMsg, ephemeral: true });
-        }
+        const errorMsg = 'Có lỗi xảy ra!';
+        if (target.replied || target.deferred) await target.followUp({ content: errorMsg, ephemeral: true });
+        else target.reply ? target.reply(errorMsg) : target.reply({ content: errorMsg, ephemeral: true });
     }
 }
 
