@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, REST, Routes, AttachmentBuilder } = require('discord.js');
 const cloudinary = require('cloudinary').v2;
 
 // 1. Cấu hình Cloudinary (Lấy từ Dashboard Cloudinary của bạn)
@@ -47,14 +47,14 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-// Hàm dùng chung để gửi menu Emoji (có phân trang)
+// Hàm dùng chung để gửi menu Emoji (Ma trận 5x5 - Không chữ)
 async function sendEmojiMenu(target, page = 0) {
     try {
-        const itemsPerPage = 5;
+        const itemsPerPage = 25; // Ma trận 5x5 = 25
         const result = await cloudinary.api.resources({
             type: 'upload',
             prefix: '',
-            max_results: 100 // Lấy tối đa 100 ảnh để phân trang
+            max_results: 100
         });
 
         if (result.resources.length === 0) {
@@ -62,72 +62,74 @@ async function sendEmojiMenu(target, page = 0) {
             return target.reply ? target.reply(content) : target.reply({ content, ephemeral: true });
         }
 
-        const totalPages = Math.ceil(result.resources.length / itemsPerPage);
-        const start = page * itemsPerPage;
-        const end = start + itemsPerPage;
-        const currentItems = result.resources.slice(start, end);
+        const currentItems = result.resources.slice(0, 25); // Lấy 25 ảnh đầu tiên cho ma trận 5x5
 
-        const embeds = [];
-        const emojiButtons = new ActionRowBuilder();
-        const navButtons = new ActionRowBuilder();
-
-        currentItems.forEach((resource) => {
-            const displayName = resource.public_id.includes('/') ? resource.public_id.split('/').pop() : resource.public_id;
-            
-            // Ép kích thước ảnh nhỏ lại (40x40)
-            const imageUrl = cloudinary.url(resource.public_id, { 
-                width: 40, 
-                height: 40, 
-                crop: "fit", 
-                quality: "auto" 
-            });
-
-            // Tạo Embed với thumbnail (ảnh nhỏ bên cạnh) thay vì image (ảnh to bên dưới)
-            embeds.push({
-                title: displayName,
-                thumbnail: { url: imageUrl }
-            });
-
-            // Tạo nút bấm tương ứng
-            emojiButtons.addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`send_${resource.public_id}`)
-                    .setLabel(displayName)
-                    .setStyle(ButtonStyle.Secondary)
-            );
+        // 1. Tạo URL ảnh lưới 5x5 bằng Cloudinary Overlays
+        // Sử dụng ảnh trắng làm nền 150x150
+        let gridUrl = cloudinary.url("sample", { // Dùng sample làm base và clear nó
+            transformation: [
+                { width: 150, height: 150, crop: "fill", effect: "colorize", color: "white" },
+                ...currentItems.map((res, i) => {
+                    const x = (i % 5) * 30;
+                    const y = Math.floor(i / 5) * 30;
+                    return {
+                        overlay: res.public_id.replace(/\//g, ':'),
+                        width: 30,
+                        height: 30,
+                        crop: "fit",
+                        gravity: "north_west",
+                        x: x,
+                        y: y
+                    };
+                })
+            ]
         });
 
-        // Nút điều hướng
-        navButtons.addComponents(
-            new ButtonBuilder()
-                .setCustomId(`page_${page - 1}`)
-                .setLabel('⬅️ Trang trước')
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(page === 0),
-            new ButtonBuilder()
-                .setCustomId(`page_${page + 1}`)
-                .setLabel('Trang sau ➡️')
-                .setStyle(ButtonStyle.Primary)
-                .setDisabled(page >= totalPages - 1)
-        );
+        const attachment = new AttachmentBuilder(gridUrl, { name: 'matrix.png' });
+        const rows = [];
+
+        // 2. Tạo đúng 5 hàng, mỗi hàng 5 nút (Tổng 25 nút)
+        for (let r = 0; r < 5; r++) {
+            const row = new ActionRowBuilder();
+            for (let c = 0; c < 5; c++) {
+                const index = r * 5 + c;
+                if (index < currentItems.length) {
+                    const res = currentItems[index];
+                    row.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`send_${res.public_id}`)
+                            .setEmoji('⬛') // Nút vuông tối giản
+                            .setStyle(ButtonStyle.Secondary)
+                    );
+                } else {
+                    // Nút ảo nếu không đủ ảnh
+                    row.addComponents(
+                        new ButtonBuilder()
+                            .setCustomId(`empty_${index}`)
+                            .setEmoji('🔳')
+                            .setStyle(ButtonStyle.Secondary)
+                            .setDisabled(true)
+                    );
+                }
+            }
+            rows.push(row);
+        }
 
         const menuData = {
-            content: `🌟 **KumoD Emoji Hub** (Trang ${page + 1}/${totalPages})`,
-            embeds: embeds,
-            components: [emojiButtons, navButtons]
+            content: '🌟 **Emoji Matrix 5x5**',
+            files: [attachment],
+            components: rows
         };
 
         if (target.isChatInputCommand && target.isChatInputCommand()) {
             await target.reply({ ...menuData, ephemeral: true });
-        } else if (target.isButton && target.isButton()) {
-            await target.update(menuData);
         } else if (target.reply) {
             await target.reply(menuData);
         }
 
     } catch (error) {
         console.error('❌ Lỗi:', error);
-        const errorMsg = 'Có lỗi xảy ra khi tải kho ảnh!';
+        const errorMsg = 'Có lỗi xảy ra khi tạo ma trận ảnh 5x5!';
         if (target.replied || target.deferred) {
             await target.followUp({ content: errorMsg, ephemeral: true });
         } else {
