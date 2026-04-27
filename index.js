@@ -51,39 +51,49 @@ client.on('messageCreate', async (message) => {
 async function sendEmojiMenu(target, page = 0) {
     try {
         const itemsPerPage = 15; // 3 hàng x 5 nút = 15
+        console.log(`[${target.id}] ⏳ Đang lấy danh sách ảnh từ Cloudinary (max 100)...`);
         const result = await cloudinary.api.resources({
             type: 'upload',
             prefix: '',
-            max_results: 500 // Hỗ trợ lên đến 500 ảnh
+            max_results: 100
         });
 
         if (result.resources.length === 0) {
+            console.log(`[${target.id}] ⚠️ Kho ảnh trống.`);
             const content = 'Kho ảnh trống rồi!';
-            return target.reply ? target.reply(content) : target.reply({ content, ephemeral: true });
+            if (target.deferred || target.replied) await target.editReply(content);
+            else await target.reply({ content, ephemeral: true });
+            return;
         }
 
+        console.log(`[${target.id}] ✅ Đã lấy ${result.resources.length} ảnh.`);
         const totalPages = Math.ceil(result.resources.length / itemsPerPage);
         const start = page * itemsPerPage;
         const currentItems = result.resources.slice(start, start + itemsPerPage);
 
         const guild = target.guild;
-        if (!guild) {
-            return target.editReply('Lệnh này chỉ dùng được trong Server (Guild).');
-        }
+        if (!guild) return target.editReply('Chỉ dùng được trong Server.');
 
-        // 1. Đồng bộ Emoji (Xử lý song song)
+        // 1. Đồng bộ Emoji
+        console.log(`[${target.id}] ⏳ Đang đồng bộ ${currentItems.length} Emoji sang Discord...`);
         const discordEmojis = await guild.emojis.fetch();
-        const emojiMapping = await Promise.all(currentItems.map(async (res) => {
+        
+        const emojiMapping = await Promise.all(currentItems.map(async (res, i) => {
             const cleanName = `hub_${res.public_id.replace(/[^a-zA-Z0-9]/g, '_')}`.slice(0, 32);
             let emoji = discordEmojis.find(e => e.name === cleanName);
+
             if (!emoji) {
                 try {
                     const imageUrl = cloudinary.url(res.public_id, { width: 64, height: 64, crop: "fit" });
                     emoji = await guild.emojis.create({ attachment: imageUrl, name: cleanName });
-                } catch (err) { console.error(`❌ Lỗi tạo Emoji: ${err.message}`); }
+                    console.log(`   └─ ✅ Tạo mới: ${cleanName}`);
+                } catch (err) {
+                    console.error(`   └─ ❌ Lỗi tạo ${cleanName}: ${err.message}`);
+                }
             }
             return { public_id: res.public_id, emoji: emoji };
         }));
+        console.log(`[${target.id}] ✅ Đồng bộ Emoji hoàn tất.`);
 
         const rows = [];
         // 2. Tạo 3 hàng Emoji (3x5 = 15 nút)
