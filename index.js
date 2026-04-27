@@ -157,6 +157,7 @@ client.on('interactionCreate', async (interaction) => {
 
     // 2. Xử lý phân trang
     if (interaction.isButton() && interaction.customId.startsWith('page_')) {
+        await interaction.deferUpdate(); // Quan trọng: Cập nhật tin nhắn hiện tại thay vì tạo mới
         const newPage = parseInt(interaction.customId.replace('page_', ''));
         await sendEmojiMenu(interaction, newPage);
         return;
