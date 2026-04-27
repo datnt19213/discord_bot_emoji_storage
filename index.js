@@ -79,39 +79,33 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.customId.startsWith('send_')) {
         const name = interaction.customId.replace('send_', '');
 
-        // Tối ưu ảnh WebP cực nhẹ để Mobile/4G load nhanh
+        // Tự động lấy URL từ Cloudinary
+        // .url() sẽ trả về link ảnh gốc. 
+        // Nếu bạn muốn ép kiểu hoặc tối ưu, hãy dùng cách dưới đây:
         const imageUrl = cloudinary.url(`discord_emojis/${name}`, {
-            width: 320,
-            crop: "scale",
-            format: "webp",
-            quality: "auto"
+            // Nếu là GIF, Cloudinary sẽ tự giữ nguyên nếu bạn không ép format tĩnh
+            // Để an toàn cho cả động và tĩnh, bạn nên bỏ dòng format: "webp" 
+            // hoặc dùng "auto" để Cloudinary tự quyết định.
+            quality: "auto",
+            fetch_format: "auto"
         });
 
         try {
-            // Tìm Webhook hiện có hoặc tạo mới trong channel
             const webhooks = await interaction.channel.fetchWebhooks();
             let webhook = webhooks.find(wh => wh.name === 'EmojiHelper');
-
             if (!webhook) {
-                webhook = await interaction.channel.createWebhook({
-                    name: 'EmojiHelper',
-                    avatar: client.user.displayAvatarURL(),
-                });
+                webhook = await interaction.channel.createWebhook({ name: 'EmojiHelper' });
             }
 
-            // "Giả danh" người vừa bấm nút để gửi ảnh
             await webhook.send({
-                content: imageUrl,
+                content: imageUrl, // Discord sẽ tự render link này thành ảnh hoặc GIF
                 username: interaction.member.displayName,
                 avatarURL: interaction.user.displayAvatarURL(),
             });
 
-            // Để tránh lỗi "Interaction failed" trên Discord
             await interaction.deferUpdate();
-
         } catch (err) {
-            console.error('Lỗi Webhook:', err);
-            await interaction.reply({ content: 'Lỗi gửi ảnh rồi!', ephemeral: true });
+            console.error(err);
         }
     }
 });
