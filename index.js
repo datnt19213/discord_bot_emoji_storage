@@ -50,7 +50,7 @@ client.on('messageCreate', async (message) => {
 // Hàm dùng chung để gửi menu Emoji (Ma trận 4x5 + Phân trang)
 async function sendEmojiMenu(target, page = 0) {
     try {
-        const itemsPerPage = 20; // 4 hàng x 5 nút = 20
+        const itemsPerPage = 15; // 3 hàng x 5 nút = 15
         const result = await cloudinary.api.resources({
             type: 'upload',
             prefix: '',
@@ -86,8 +86,8 @@ async function sendEmojiMenu(target, page = 0) {
         }));
 
         const rows = [];
-        // 2. Tạo 4 hàng Emoji (4x5 = 20 nút)
-        for (let r = 0; r < 4; r++) {
+        // 2. Tạo 3 hàng Emoji (3x5 = 15 nút)
+        for (let r = 0; r < 3; r++) {
             const row = new ActionRowBuilder();
             let hasEmoji = false;
             for (let c = 0; c < 5; c++) {
@@ -138,10 +138,18 @@ async function sendEmojiMenu(target, page = 0) {
         }
 
     } catch (error) {
-        console.error('❌ Lỗi:', error);
-        const errorMsg = 'Có lỗi xảy ra!';
-        if (target.replied || target.deferred) await target.followUp({ content: errorMsg, ephemeral: true });
-        else target.reply ? target.reply(errorMsg) : target.reply({ content: errorMsg, ephemeral: true });
+        console.error('❌ Lỗi chi tiết:', error);
+        const errorMsg = `Có lỗi xảy ra: ${error.message}. Hãy kiểm tra xem Bot đã có quyền 'Manage Emojis' chưa?`;
+        
+        try {
+            if (target.deferred || target.replied) {
+                await target.editReply({ content: errorMsg, components: [] });
+            } else if (target.reply) {
+                await target.reply(errorMsg);
+            }
+        } catch (err) {
+            console.error('❌ Không thể gửi báo lỗi:', err.message);
+        }
     }
 }
 
