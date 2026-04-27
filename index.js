@@ -62,44 +62,56 @@ async function sendEmojiMenu(target, page = 0) {
             return target.reply ? target.reply(content) : target.reply({ content, ephemeral: true });
         }
 
-        const currentItems = result.resources.slice(0, 25); // Lấy 25 ảnh đầu tiên cho ma trận 5x5
+        const currentItems = result.resources.slice(0, 25);
+        const guild = target.guild;
+        if (!guild) {
+            return target.editReply('Lệnh này chỉ dùng được trong Server (Guild) để hiển thị Emoji trên nút.');
+        }
 
-        // 1. Tạo URL ảnh lưới 5x5 bằng Cloudinary Overlays
-        // Sử dụng ảnh đầu tiên làm base và dùng layer 'blank' hoặc hiệu ứng để làm nền trắng
-        const overlays = currentItems.map((res, i) => {
-            const x = (i % 5) * 30;
-            const y = Math.floor(i / 5) * 30;
-            // Cloudinary yêu cầu escape dấu / thành : trong overlay
-            const cleanId = res.public_id.replace(/\//g, ':');
-            return `l_${cleanId},w_30,h_30,g_north_west,x_${x},y_${y}`;
-        }).join('/');
+        // 1. Đồng bộ Emoji từ Cloudinary sang Discord Server
+        const discordEmojis = await guild.emojis.fetch();
+        const emojiMapping = [];
 
-        // Tạo URL thủ công để kiểm soát chính xác các layer
-        const cloudName = process.env.CLOUDINARY_NAME;
-        const gridUrl = `https://res.cloudinary.com/${cloudName}/image/upload/w_150,h_150,c_pad,b_white/${overlays}/${currentItems[0].public_id}`;
+        for (const res of currentItems) {
+            // Tạo tên emoji hợp lệ (chỉ chữ, số và gạch dưới)
+            const cleanName = `hub_${res.public_id.replace(/[^a-zA-Z0-9]/g, '_')}`.slice(0, 32);
+            let emoji = discordEmojis.find(e => e.name === cleanName);
 
-        const attachment = new AttachmentBuilder(gridUrl, { name: 'matrix.png' });
+            if (!emoji) {
+                try {
+                    const imageUrl = cloudinary.url(res.public_id, { width: 128, height: 128, crop: "fit" });
+                    emoji = await guild.emojis.create({ attachment: imageUrl, name: cleanName });
+                    console.log(`✅ Đã tạo Emoji: ${cleanName}`);
+                } catch (err) {
+                    console.error(`❌ Không thể tạo Emoji ${cleanName}:`, err.message);
+                }
+            }
+            emojiMapping.push({ public_id: res.public_id, emoji: emoji });
+        }
+
         const rows = [];
-
-        // 2. Tạo đúng 5 hàng, mỗi hàng 5 nút (Tổng 25 nút)
+        // 2. Tạo 5 hàng nút, mỗi hàng 5 nút (Tổng 25 nút có ảnh)
         for (let r = 0; r < 5; r++) {
             const row = new ActionRowBuilder();
             for (let c = 0; c < 5; c++) {
                 const index = r * 5 + c;
-                if (index < currentItems.length) {
-                    const res = currentItems[index];
-                    row.addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`send_${res.public_id}`)
-                            .setEmoji('⬛') // Nút vuông tối giản
-                            .setStyle(ButtonStyle.Secondary)
-                    );
+                if (index < emojiMapping.length) {
+                    const item = emojiMapping[index];
+                    const button = new ButtonBuilder()
+                        .setCustomId(`send_${item.public_id}`)
+                        .setStyle(ButtonStyle.Secondary);
+                    
+                    if (item.emoji) {
+                        button.setEmoji(item.emoji.id);
+                    } else {
+                        button.setLabel('?'); // Backup nếu lỗi emoji
+                    }
+                    row.addComponents(button);
                 } else {
-                    // Nút ảo nếu không đủ ảnh
                     row.addComponents(
                         new ButtonBuilder()
                             .setCustomId(`empty_${index}`)
-                            .setEmoji('🔳')
+                            .setLabel(' ')
                             .setStyle(ButtonStyle.Secondary)
                             .setDisabled(true)
                     );
@@ -109,8 +121,7 @@ async function sendEmojiMenu(target, page = 0) {
         }
 
         const menuData = {
-            content: '🌟 **Emoji Matrix 5x5**',
-            files: [attachment],
+            content: '🌟 **KumoD Emoji Hub** (Ảnh đã hiện trên nút!)',
             components: rows
         };
 
