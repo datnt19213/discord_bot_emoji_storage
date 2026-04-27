@@ -52,7 +52,7 @@ async function sendEmojiMenu(target) {
     try {
         const result = await cloudinary.api.resources({
             type: 'upload',
-            prefix: 'discord_emojis/',
+            prefix: '',
             max_results: 25
         });
 
