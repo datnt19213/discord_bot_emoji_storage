@@ -114,8 +114,8 @@ async function sendEmojiMenu(target, page = 0) {
             components: rows
         };
 
-        if (target.isChatInputCommand && target.isChatInputCommand()) {
-            await target.reply({ ...menuData, ephemeral: true });
+        if (target.deferred || target.replied) {
+            await target.editReply(menuData);
         } else if (target.reply) {
             await target.reply(menuData);
         }
@@ -136,6 +136,7 @@ client.on('interactionCreate', async (interaction) => {
     // 1. Xử lý Slash Command /emo
     if (interaction.isChatInputCommand()) {
         if (interaction.commandName === 'emo') {
+            await interaction.deferReply({ ephemeral: true }); // Thông báo đang xử lý
             await sendEmojiMenu(interaction);
         }
     }
@@ -151,6 +152,7 @@ client.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
 
     if (interaction.customId.startsWith('send_')) {
+        await interaction.deferUpdate(); // Thông báo đã nhận lệnh bấm nút ngay lập tức
         const publicId = interaction.customId.replace('send_', '');
 
         // Tự động lấy URL từ Cloudinary bằng publicId đầy đủ
@@ -172,7 +174,7 @@ client.on('interactionCreate', async (interaction) => {
                 avatarURL: interaction.user.displayAvatarURL(),
             });
 
-            await interaction.deferUpdate();
+            // Không cần deferUpdate ở đây nữa vì đã gọi ở trên
         } catch (err) {
             console.error(err);
         }
